@@ -1,8 +1,34 @@
 class EPGParser {
     static async fetchAndParse(url) {
         try {
-            const response = await fetch(url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                let errorMsg = `HTTP error! status: ${response.status}`;
+                let errorCode = `HTTP_${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) {
+                        errorMsg = errorData.error;
+                        errorCode = errorData.code || errorCode;
+                    }
+                } catch(e) {}
+                const errorObj = new Error(errorMsg);
+                errorObj.status = response.status;
+                errorObj.code = errorCode;
+                throw errorObj;
+            }
+
             const xmlText = await response.text();
+            if (!xmlText || xmlText.trim() === '') {
+                const errorObj = new Error("Resposta EPG vazia do servidor");
+                errorObj.code = 'EMPTY_RESPONSE';
+                throw errorObj;
+            }
             
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -51,8 +77,18 @@ class EPGParser {
 
             return epgData;
         } catch (error) {
+            if (error.name === 'AbortError') {
+                const errorObj = new Error("Tempo limite do EPG excedido (30s)");
+                errorObj.code = 'TIMEOUT';
+                throw errorObj;
+            }
+            if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+                const errorObj = new Error("Falha na Rede ou Bloqueio de CORS no EPG");
+                errorObj.code = 'NETWORK_CORS_ERROR';
+                throw errorObj;
+            }
             console.error("EPG Parse Error:", error);
-            throw new Error("Falha ao carregar o EPG. Verifique o CORS ou a validade da URL.");
+            throw error;
         }
     }
 

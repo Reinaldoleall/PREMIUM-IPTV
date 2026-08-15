@@ -147,11 +147,50 @@ class M3UParser {
 
     static async fetchAndParse(url) {
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                let errorMsg = `HTTP error! status: ${response.status}`;
+                let errorCode = `HTTP_${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) {
+                        errorMsg = errorData.error;
+                        errorCode = errorData.code || errorCode;
+                    }
+                } catch(e) {
+                    // Not JSON, ignore
+                }
+
+                const errorObj = new Error(errorMsg);
+                errorObj.status = response.status;
+                errorObj.code = errorCode;
+                throw errorObj;
+            }
+
             const text = await response.text();
+            if (!text || text.trim() === '') {
+                const errorObj = new Error("Resposta vazia do servidor");
+                errorObj.code = 'EMPTY_RESPONSE';
+                throw errorObj;
+            }
+
             return await this.parse(text);
         } catch (error) {
+            if (error.name === 'AbortError') {
+                const errorObj = new Error("Tempo limite da requisição excedido (30s)");
+                errorObj.code = 'TIMEOUT';
+                throw errorObj;
+            }
+            if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+                const errorObj = new Error("Falha na Rede ou Bloqueio de CORS");
+                errorObj.code = 'NETWORK_CORS_ERROR';
+                throw errorObj;
+            }
             console.error("Error fetching or parsing M3U:", error);
             throw error;
         }

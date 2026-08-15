@@ -65,28 +65,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const m3uText = await file.text();
                     parsedData = await M3UParser.parse(m3uText);
                 } else {
-                    try {
-                        // 1. Tenta link direto primeiro (funciona no localhost ou CORS liberado)
-                        parsedData = await M3UParser.fetchAndParse(urlInput.value);
-                    } catch (e1) {
-                        console.warn("Direct fetch failed, trying Vercel proxy...");
+                    let finalErrorDetails = [];
+                    const strategies = [
+                        { name: 'Direct Fetch', url: urlInput.value },
+                        { name: 'Vercel Proxy', url: `/api/proxy?url=${encodeURIComponent(urlInput.value)}` },
+                        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput.value)}` },
+                        { name: 'CorsProxy.io', url: `https://corsproxy.io/?${encodeURIComponent(urlInput.value)}` }
+                    ];
+
+                    let success = false;
+                    for (let strategy of strategies) {
                         try {
-                            // 2. Tenta com o Proxy Interno (Serverless)
-                            const proxyUrl = `/api/proxy?url=${encodeURIComponent(urlInput.value)}`;
-                            parsedData = await M3UParser.fetchAndParse(proxyUrl);
-                        } catch (e2) {
-                            console.warn("Vercel proxy failed, trying AllOrigins...", e2);
-                            try {
-                                // 3. Tenta com AllOrigins (que funcionava antes)
-                                const allOriginsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput.value)}`;
-                                parsedData = await M3UParser.fetchAndParse(allOriginsUrl);
-                            } catch (e3) {
-                                console.warn("AllOrigins failed, trying CorsProxy.io...", e3);
-                                // 4. Tenta com CorsProxy.io
-                                const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(urlInput.value)}`;
-                                parsedData = await M3UParser.fetchAndParse(corsProxyUrl);
-                            }
+                            console.log(`[IPTV Web] Tentando carregar via: ${strategy.name}`);
+                            parsedData = await M3UParser.fetchAndParse(strategy.url);
+                            success = true;
+                            break;
+                        } catch (e) {
+                            console.warn(`[IPTV Web] Falha na estratégia ${strategy.name}:`, e.message);
+                            finalErrorDetails.push(`${strategy.name} falhou: ${e.code || e.message}`);
                         }
+                    }
+
+                    if (!success) {
+                        let errorMsg = '❌ Falha ao carregar a lista. Nenhuma rota de conexão funcionou.\n\nDetalhes do Diagnóstico:\n';
+                        finalErrorDetails.forEach(d => errorMsg += `- ${d}\n`);
+                        
+                        if (finalErrorDetails.some(d => d.includes('UPSTREAM_ERROR') || d.match(/HTTP_(403|401|406)/))) {
+                            errorMsg += '\n🛑 DIAGNÓSTICO FINAL: O servidor de origem (seu provedor IPTV) recusou a requisição. Ele está bloqueando o acesso do nosso servidor Vercel (WAF/Anti-Scraper) ou exigindo autenticação especial. NÃO é um erro de CORS do navegador.';
+                        } else if (finalErrorDetails.every(d => d.includes('NETWORK_CORS_ERROR'))) {
+                            errorMsg += '\n🛑 DIAGNÓSTICO FINAL: Erro de CORS estrito ou falha de rede. Nenhum proxy conseguiu alcançar a URL de forma limpa.';
+                        } else if (finalErrorDetails.some(d => d.includes('TIMEOUT'))) {
+                            errorMsg += '\n🛑 DIAGNÓSTICO FINAL: O servidor IPTV demorou muito para responder (Timeout > 30s) e a requisição foi abortada.';
+                        }
+                        
+                        errorMsg += '\n\n✅ SOLUÇÃO GARANTIDA: Baixe o arquivo .m3u da sua lista e utilize a opção "Ou faça upload do arquivo" logo abaixo.';
+                        alert(errorMsg);
+                        throw new Error("All fetch strategies failed.");
                     }
                 }
                 
@@ -103,7 +117,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UIManager.renderSources('sources-list');
                 loadViewData(document.querySelector('.nav-item.active').getAttribute('data-view'));
             } catch (error) {
-                alert('Erro ao carregar a lista. Se for bloqueio de CORS, baixe o arquivo e faça o upload local. Erro: ' + error.message);
+                if (error.message !== "All fetch strategies failed.") {
+                    alert('Erro inesperado ao processar a lista: ' + error.message);
+                }
             } finally {
                 btn.textContent = 'Salvar';
                 btn.disabled = false;
