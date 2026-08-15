@@ -66,13 +66,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                     parsedData = await M3UParser.parse(m3uText);
                 } else {
                     try {
-                        // Tenta link direto primeiro (funciona no localhost ou CORS liberado)
+                        // 1. Tenta link direto primeiro (funciona no localhost ou CORS liberado)
                         parsedData = await M3UParser.fetchAndParse(urlInput.value);
-                    } catch (e) {
-                        console.warn("Direct fetch failed (likely CORS), using internal Vercel proxy...", e);
-                        // Tenta com o Proxy Interno (Serverless) para contornar o CORS
-                        const proxyUrl = `/api/proxy?url=${encodeURIComponent(urlInput.value)}`;
-                        parsedData = await M3UParser.fetchAndParse(proxyUrl);
+                    } catch (e1) {
+                        console.warn("Direct fetch failed, trying Vercel proxy...");
+                        try {
+                            // 2. Tenta com o Proxy Interno (Serverless)
+                            const proxyUrl = `/api/proxy?url=${encodeURIComponent(urlInput.value)}`;
+                            parsedData = await M3UParser.fetchAndParse(proxyUrl);
+                        } catch (e2) {
+                            console.warn("Vercel proxy failed, trying AllOrigins...", e2);
+                            try {
+                                // 3. Tenta com AllOrigins (que funcionava antes)
+                                const allOriginsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput.value)}`;
+                                parsedData = await M3UParser.fetchAndParse(allOriginsUrl);
+                            } catch (e3) {
+                                console.warn("AllOrigins failed, trying CorsProxy.io...", e3);
+                                // 4. Tenta com CorsProxy.io
+                                const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(urlInput.value)}`;
+                                parsedData = await M3UParser.fetchAndParse(corsProxyUrl);
+                            }
+                        }
                     }
                 }
                 
@@ -120,10 +134,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 try {
                     await EPGParser.fetchAndParse(url);
-                } catch (e) {
-                    console.warn("Direct EPG fetch failed, trying proxy...", e);
-                    const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-                    await EPGParser.fetchAndParse(proxyUrl);
+                } catch (e1) {
+                    console.warn("Direct EPG fetch failed, trying Vercel proxy...");
+                    try {
+                        const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+                        await EPGParser.fetchAndParse(proxyUrl);
+                    } catch (e2) {
+                        console.warn("Vercel proxy failed, trying AllOrigins...");
+                        try {
+                            const allOriginsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                            await EPGParser.fetchAndParse(allOriginsUrl);
+                        } catch (e3) {
+                            console.warn("AllOrigins failed, trying CorsProxy.io...");
+                            const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                            await EPGParser.fetchAndParse(corsProxyUrl);
+                        }
+                    }
                 }
                 
                 await EPGParser.setStoredEpgUrl(url);
