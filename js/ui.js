@@ -1,6 +1,7 @@
 class UIManager {
     static renderGrid(containerId, items, onPlay) {
         const container = document.getElementById(containerId);
+        if (!container) return;
         container.innerHTML = '';
 
         if (!items || items.length === 0) {
@@ -13,10 +14,42 @@ class UIManager {
             return;
         }
 
-        items.forEach(item => {
-            const card = this.createCard(item, onPlay);
-            container.appendChild(card);
-        });
+        const pageSize = 50;
+        let currentPage = 0;
+
+        const renderPage = () => {
+            const start = currentPage * pageSize;
+            const end = start + pageSize;
+            const pageItems = items.slice(start, end);
+            
+            pageItems.forEach(item => {
+                const card = this.createCard(item, onPlay);
+                container.appendChild(card);
+            });
+
+            currentPage++;
+            
+            if (end < items.length) {
+                const sentinel = document.createElement('div');
+                sentinel.className = 'scroll-sentinel';
+                sentinel.style.width = '100%';
+                sentinel.style.height = '1px';
+                container.appendChild(sentinel);
+                observer.observe(sentinel);
+            }
+        };
+
+        const observer = new IntersectionObserver((entries, obs) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    obs.unobserve(entry.target);
+                    entry.target.remove();
+                    renderPage();
+                }
+            });
+        }, { rootMargin: '200px' });
+
+        renderPage();
     }
 
     static renderCarousel(containerId, items, onPlay) {
