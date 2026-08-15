@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Premium</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Material Symbols Outlined -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    
+    <!-- HLS.js for Live TV -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12"></script>
+    
+    <!-- Google Cast Web SDK -->
+    <script type="text/javascript" src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+    
+    <!-- localForage for IndexedDB abstraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+</head>
+<body>
+    <!-- Splash / Login Screen -->
+    <div class="splash-screen active" id="splash-screen">
+        <div class="splash-content">
+            <h1 style="font-size:48px; color:var(--accent-gold); margin-bottom: 8px;">IPTV PREMIUM</h1>
+            <p style="color:var(--text-secondary); margin-bottom: 32px;">Acesse sua conta para continuar</p>
+            
+            <div id="login-container" style="display:none; width: 100%; max-width: 400px; margin: 0 auto;">
+                <input type="text" id="input-license" placeholder="Insira sua Chave de Licença" style="width: 100%; padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.5); color: white; font-size: 18px; text-align: center; margin-bottom: 16px; outline: none;">
+                <button class="btn btn-primary" id="btn-validate" style="width: 100%; font-size: 18px; padding: 16px;">Entrar</button>
+                <p id="login-error" style="color: var(--primary-red); margin-top: 16px; display: none;"></p>
+                <div id="device-limit-container" style="display:none; margin-top: 16px;">
+                    <p style="color: orange; font-size: 14px; margin-bottom: 8px;">Limite de telas atingido. Deseja deslogar um dispositivo antigo para acessar?</p>
+                    <button class="btn btn-secondary" id="btn-force-login" style="width: 100%;">Forçar Entrada</button>
+                </div>
+            </div>
+            
+            <div id="splash-loading" style="display:block; margin-top: 32px;">
+                <div class="spinner"></div>
+                <p style="color:var(--text-secondary); margin-top: 16px;">Verificando Licença...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profiles Selection Overlay -->
+    <div class="profiles-overlay active" id="profiles-overlay">
+        <div class="profiles-container">
+            <h2>Quem está assistindo?</h2>
+            <div class="profiles-list" id="profiles-list">
+                <!-- Perfis carregados via JS -->
+            </div>
+            <button class="btn btn-secondary" id="btn-manage-profiles" style="margin-top: 40px;">Gerenciar Perfis</button>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container" id="app-container" style="opacity: 0; pointer-events: none; transition: opacity 0.5s ease;">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1>IPTV</h1>
+                <span>PREMIUM</span>
+            </div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active" data-view="home" tabindex="0">
+                    <span class="material-symbols-outlined">home</span>
+                    <span>Início</span>
+                </li>
+                <li class="nav-item divider"></li>
+                <li class="nav-item" data-view="movies" tabindex="0">
+                    <span class="material-symbols-outlined">movie</span>
+                    <span>Filmes</span>
+                </li>
+                <li class="nav-item" data-view="series" tabindex="0">
+                    <span class="material-symbols-outlined">tv_gen</span>
+                    <span>Séries</span>
+                </li>
+                <li class="nav-item" data-view="live" tabindex="0">
+                    <span class="material-symbols-outlined">live_tv</span>
+                    <span>TV Ao Vivo</span>
+                </li>
+                <li class="nav-item" data-view="actor-search" tabindex="0">
+                    <span class="material-symbols-outlined">person_search</span>
+                    <span>Atores</span>
+                </li>
+                <li class="nav-item divider"></li>
+                <li class="nav-item" data-view="favorites" tabindex="0">
+                    <span class="material-symbols-outlined">favorite</span>
+                    <span>Favoritos</span>
+                </li>
+                <li class="nav-item" data-view="history" tabindex="0">
+                    <span class="material-symbols-outlined">history</span>
+                    <span>Histórico</span>
+                </li>
+                <li class="nav-item divider"></li>
+                <li class="nav-item" data-view="settings" tabindex="0">
+                    <span class="material-symbols-outlined">settings</span>
+                    <span>Configurações</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content" id="main-content">
+            <!-- Home View -->
+            <div id="view-home" class="view-section active">
+                <div class="hero-banner" id="hero-banner">
+                    <div class="hero-content">
+                        <h2 id="hero-title">Bem-vindo ao IPTV Premium</h2>
+                        <p id="hero-desc">Sua central de entretenimento. Adicione uma lista para começar.</p>
+                    </div>
+                </div>
+                
+                <div class="carousel-section" id="section-continue">
+                    <h3>Continuar Assistindo</h3>
+                    <div class="carousel-container" id="carousel-continue"></div>
+                </div>
+                
+                <div class="carousel-section" id="section-trending">
+                    <h3>Em Alta (Tendências)</h3>
+                    <div class="carousel-container" id="carousel-trending"></div>
+                </div>
+            </div>
+
+            <!-- Movies View -->
+            <div id="view-movies" class="view-section">
+                <div class="header-actions">
+                    <h2 class="view-title">Filmes</h2>
+                    <div class="search-box">
+                        <span class="material-symbols-outlined">search</span>
+                        <input type="text" id="search-movies" placeholder="Buscar filmes...">
+                    </div>
+                </div>
+                <div class="category-filters" id="filters-movies"></div>
+                <div class="content-grid" id="grid-movies">
+                    <div class="empty-state">
+                        <span class="material-symbols-outlined">inbox</span>
+                        <p>Nenhuma lista carregada.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Series View -->
+            <div id="view-series" class="view-section">
+                <div class="header-actions">
+                    <h2 class="view-title">Séries</h2>
+                    <div class="search-box">
+                        <span class="material-symbols-outlined">search</span>
+                        <input type="text" id="search-series" placeholder="Buscar séries...">
+                    </div>
+                </div>
+                <div class="category-filters" id="filters-series"></div>
+                <div class="content-grid" id="grid-series"></div>
+            </div>
+
+            <!-- Live TV View -->
+            <div id="view-live" class="view-section">
+                <div class="header-actions">
+                    <h2 class="view-title">TV Ao Vivo</h2>
+                    <div class="search-box">
+                        <span class="material-symbols-outlined">search</span>
+                        <input type="text" id="search-live" placeholder="Buscar canais...">
+                    </div>
+                </div>
+                <div class="category-filters" id="filters-live"></div>
+                <!-- EPG Info Placeholder -->
+                <div id="epg-now-playing" style="margin-bottom: 24px; padding: 16px; background: rgba(255,255,255,0.05); border-radius: 8px; display: none;"></div>
+                <div class="content-grid" id="grid-live"></div>
+            </div>
+
+            <!-- Actor Search View -->
+            <div id="view-actor-search" class="view-section">
+                <div class="header-actions">
+                    <h2 class="view-title">Busca por Ator</h2>
+                    <div class="search-box">
+                        <span class="material-symbols-outlined">search</span>
+                        <input type="text" id="search-actors" placeholder="Nome do ator (ex: Tom Cruise)...">
+                    </div>
+                </div>
+                <div id="actor-results" style="margin-bottom: 32px;"></div>
+                <h3 id="actor-movies-title" style="display:none; margin-bottom: 16px;">Títulos Encontrados na sua Lista:</h3>
+                <div class="content-grid" id="grid-actor-movies"></div>
+            </div>
+
+            <!-- Favorites View -->
+            <div id="view-favorites" class="view-section">
+                <h2 class="view-title">Favoritos</h2>
+                <div class="content-grid" id="grid-favorites"></div>
+            </div>
+            
+            <!-- History View -->
+            <div id="view-history" class="view-section">
+                <h2 class="view-title">Histórico</h2>
+                <div class="content-grid" id="grid-history"></div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="view-settings" class="view-section">
+                <h2 class="view-title">Configurações</h2>
+                <div class="settings-container">
+                    <div class="settings-card">
+                        <h3>Fontes de IPTV</h3>
+                        <div class="sources-list" id="sources-list"></div>
+                        <button class="btn btn-primary" id="btn-add-source">Adicionar Fonte</button>
+                    </div>
+                    
+                    <div class="settings-card" style="margin-top: 24px;">
+                        <h3>Guia de Programação (EPG)</h3>
+                        <div class="input-group">
+                            <input type="url" id="input-epg-url" placeholder="URL XMLTV (Opcional)">
+                            <button class="btn btn-secondary" id="btn-save-epg" style="margin-top: 8px;">Salvar EPG</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-card" style="margin-top: 24px;">
+                        <h3>Controle Parental</h3>
+                        <button class="btn btn-secondary" id="btn-set-pin">Configurar PIN Adulto</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Detail Overlay (Movie/Series Details) -->
+    <div class="detail-overlay" id="detail-overlay">
+        <div class="detail-backdrop" id="detail-backdrop"></div>
+        <div class="detail-content-wrapper">
+            <button class="btn-close-detail" id="btn-close-detail">
+                <span class="material-symbols-outlined">arrow_back</span>
+            </button>
+            
+            <div class="detail-main">
+                <img id="detail-poster" class="detail-poster" src="" alt="Poster">
+                <div class="detail-info">
+                    <h1 id="detail-title">Title</h1>
+                    <div class="detail-meta">
+                        <span id="detail-rating" class="meta-tag rating"><span class="material-symbols-outlined">star</span> 0.0</span>
+                        <span id="detail-year" class="meta-tag">YYYY</span>
+                        <span id="detail-genres" class="meta-tag">Genres</span>
+                    </div>
+                    <p id="detail-overview" class="detail-overview">Loading overview...</p>
+                    
+                    <div class="detail-actions">
+                        <button class="btn btn-primary btn-play-large" id="btn-detail-play">
+                            <span class="material-symbols-outlined">play_arrow</span> Assistir
+                        </button>
+                        <button class="btn btn-secondary btn-fav" id="btn-detail-fav">
+                            <span class="material-symbols-outlined">favorite_border</span>
+                        </button>
+                        <!-- Botão Cast -->
+                        <button class="btn btn-secondary btn-cast" id="btn-cast" style="display:none;" title="Transmitir (Chromecast)">
+                            <span class="material-symbols-outlined">cast</span>
+                        </button>
+                        <!-- Botão Watch Party -->
+                        <button class="btn btn-secondary btn-party" id="btn-party" title="Watch Party">
+                            <span class="material-symbols-outlined">group</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="detail-cast" id="detail-cast-container">
+                <h3>Elenco</h3>
+                <div class="cast-list" id="detail-cast"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Player Overlay -->
+    <div class="player-overlay" id="player-overlay" style="display: none;">
+        <div class="player-container">
+            <video id="video-player" controls autoplay></video>
+            <button class="btn-close-player" id="btn-close-player">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+            <div class="player-title" id="player-title"></div>
+        </div>
+    </div>
+
+    <!-- PIN Verification Modal -->
+    <div class="modal-overlay" id="modal-pin">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Controle Parental</h3>
+                <span class="material-symbols-outlined modal-close-pin">close</span>
+            </div>
+            <div class="modal-body">
+                <p>Insira o PIN para acessar este conteúdo adulto:</p>
+                <div class="input-group">
+                    <input type="password" id="input-verify-pin" maxlength="4" placeholder="****" style="text-align: center; font-size: 24px; letter-spacing: 8px;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary modal-close-pin">Cancelar</button>
+                <button class="btn btn-primary" id="btn-submit-pin">Acessar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Source Modal -->
+    <div class="modal-overlay" id="modal-add-source">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Adicionar Lista M3U</h3>
+                <span class="material-symbols-outlined modal-close">close</span>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>Nome da Lista</label>
+                    <input type="text" id="input-source-name" placeholder="Ex: Minha Lista">
+                </div>
+                <div class="input-group">
+                    <label>URL M3U</label>
+                    <input type="url" id="input-source-url" placeholder="http://...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary modal-close">Cancelar</button>
+                <button class="btn btn-primary" id="btn-save-source">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/license-manager.js"></script>
+    <script src="js/tmdb-api.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/profiles.js"></script>
+    <script src="js/m3u-parser.js"></script>
+    <script src="js/epg-parser.js"></script>
+    <script src="js/cast-party.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/actor-search.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
