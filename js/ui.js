@@ -7,7 +7,7 @@ class UIManager {
         if (!items || items.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
-                    <span class="material-symbols-outlined">inbox</span>
+                    <span class="material-icons-outlined">inbox</span>
                     <p>Nenhum conteúdo encontrado.</p>
                 </div>
             `;
@@ -50,6 +50,71 @@ class UIManager {
         }, { rootMargin: '200px' });
 
         renderPage();
+    }
+
+    static async renderGridPaginated(containerId, fetchCallback, onPlay) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+
+        const pageSize = 50;
+        let currentPage = 0;
+        let isFetching = false;
+        let hasMore = true;
+
+        const renderPage = async () => {
+            if (isFetching || !hasMore) return;
+            isFetching = true;
+            
+            const oldSentinel = container.querySelector('.scroll-sentinel');
+            if(oldSentinel) oldSentinel.remove();
+
+            const items = await fetchCallback(currentPage, pageSize);
+            
+            if (!items || items.length === 0) {
+                if (currentPage === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <span class="material-icons-outlined">inbox</span>
+                            <p>Nenhum conteúdo encontrado.</p>
+                        </div>
+                    `;
+                }
+                hasMore = false;
+                isFetching = false;
+                return;
+            }
+
+            items.forEach(item => {
+                const card = this.createCard(item, onPlay);
+                container.appendChild(card);
+            });
+
+            currentPage++;
+            
+            if (items.length === pageSize) {
+                const sentinel = document.createElement('div');
+                sentinel.className = 'scroll-sentinel';
+                sentinel.style.width = '100%';
+                sentinel.style.height = '1px';
+                container.appendChild(sentinel);
+                observer.observe(sentinel);
+            } else {
+                hasMore = false;
+            }
+            isFetching = false;
+        };
+
+        const observer = new IntersectionObserver((entries, obs) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !isFetching && hasMore) {
+                    obs.unobserve(entry.target);
+                    renderPage();
+                }
+            });
+        }, { rootMargin: '400px' });
+
+        await renderPage();
     }
 
     static renderCarousel(containerId, items, onPlay) {
@@ -97,13 +162,13 @@ class UIManager {
         return card;
     }
 
-    static async renderFilters(containerId, items, onFilter) {
+    static async renderFilters(containerId, type, onFilter) {
         const container = document.getElementById(containerId);
         if (!container) return;
         container.innerHTML = '';
         
-        // Extract unique groups
-        const groups = [...new Set(items.map(i => i.group || 'Sem Categoria'))].sort();
+        // Fetch unique groups directly from DB metadata
+        const groups = await DB.getGroups(type);
         
         const createPill = (text, onClick, isActive = false) => {
             const pill = document.createElement('div');
@@ -126,10 +191,8 @@ class UIManager {
         container.appendChild(createPill('Todos', () => onFilter(null), true));
 
         // "Favoritos" filter
-        container.appendChild(createPill('Favoritos', async () => {
-            const favs = await DB.getFavorites();
-            const favUrls = favs.map(f => f.url);
-            onFilter('__FAVORITES__', favUrls);
+        container.appendChild(createPill('Favoritos', () => {
+            onFilter('__FAVORITES__');
         }));
 
         groups.forEach(group => {
@@ -220,7 +283,7 @@ class UIManager {
         poster.src = item.logo || 'assets/placeholder.png';
         backdrop.style.backgroundImage = 'none';
         overview.textContent = "Carregando detalhes...";
-        rating.innerHTML = `<span class="material-symbols-outlined">star</span> N/A`;
+        rating.innerHTML = `<span class="material-icons-outlined">star</span> N/A`;
         year.textContent = "";
         genres.textContent = item.group || "";
         castContainer.innerHTML = "";
@@ -233,7 +296,7 @@ class UIManager {
         
         // Setup play action
         if (item.isSeries && item.seasons) {
-            playBtn.innerHTML = `<span class="material-symbols-outlined">play_arrow</span> S01E01`;
+            playBtn.innerHTML = `<span class="material-icons-outlined">play_arrow</span> S01E01`;
             const firstSeason = Object.keys(item.seasons)[0];
             const firstEp = item.seasons[firstSeason][0];
             playBtn.onclick = () => {
@@ -274,7 +337,7 @@ class UIManager {
                     epEl.innerHTML = `
                         <div style="margin-right: 16px; font-weight: bold; color: var(--accent-gold);">E${ep.episode}</div>
                         <div style="flex: 1; font-size: 14px;">${ep.name}</div>
-                        <span class="material-symbols-outlined">play_circle</span>
+                        <span class="material-icons-outlined">play_circle</span>
                     `;
                     
                     epEl.onclick = () => {
@@ -290,7 +353,7 @@ class UIManager {
                 renderEpisodes(item.seasons[seasonNumbers[0]]);
             }
         } else {
-            playBtn.innerHTML = `<span class="material-symbols-outlined">play_arrow</span> Assistir`;
+            playBtn.innerHTML = `<span class="material-icons-outlined">play_arrow</span> Assistir`;
             playBtn.onclick = () => {
                 overlay.classList.remove('active');
                 onPlay(item);
@@ -301,8 +364,8 @@ class UIManager {
         const updateFavIcon = async () => {
             const isFav = await DB.isFavorite(item.url);
             favBtn.innerHTML = isFav 
-                ? '<span class="material-symbols-outlined" style="color:var(--accent-gold)">favorite</span>'
-                : '<span class="material-symbols-outlined">favorite_border</span>';
+                ? '<span class="material-icons-outlined" style="color:var(--accent-gold)">favorite</span>'
+                : '<span class="material-icons-outlined">favorite_border</span>';
         };
         await updateFavIcon();
         
@@ -349,7 +412,7 @@ class UIManager {
                     // Save to item so Home Banner can use it
                     item.backdropPath = details.backdropPath;
                 }
-                rating.innerHTML = `<span class="material-symbols-outlined">star</span> ${details.rating}`;
+                rating.innerHTML = `<span class="material-icons-outlined">star</span> ${details.rating}`;
                 if(details.releaseDate) year.textContent = details.releaseDate.split('-')[0];
                 if(details.genres) genres.textContent = details.genres;
 

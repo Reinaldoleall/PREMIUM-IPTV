@@ -50,27 +50,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const credits = await TmdbApi.getPersonCredits(person.id);
         const creditTitles = credits.map(c => (c.title || c.name || "").toLowerCase());
 
-        // Cross-reference with Local M3U DB
-        const localMovies = await DB.getMovies();
-        const localSeries = await DB.getSeries();
-        const allLocal = [...localMovies, ...localSeries];
-
-        const matchedItems = allLocal.filter(item => {
-            const cleanName = TmdbApi._cleanTitle(item.name).toLowerCase();
-            // Fuzzy match: check if the local clean name is in any of the credit titles
-            return creditTitles.some(ct => ct.includes(cleanName) || cleanName.includes(ct));
-        });
+        // Cross-reference with Local DB
+        const matchedItems = await DB.searchByTmdbTitles(creditTitles);
 
         actorMoviesTitle.style.display = 'block';
         if (matchedItems.length > 0) {
             UIManager.renderGrid('grid-actor-movies', matchedItems, (item) => {
-                const type = localMovies.includes(item) ? 'movie' : 'series';
-                UIManager.showDetails(item, type, (i) => Player.play(i));
+                UIManager.showDetails(item, item.type || 'movie', (i) => Player.play(i));
             });
         } else {
             document.getElementById('grid-actor-movies').innerHTML = `
                 <div class="empty-state">
-                    <span class="material-symbols-outlined">sentiment_dissatisfied</span>
+                    <span class="material-icons-outlined">sentiment_dissatisfied</span>
                     <p>O ator foi encontrado, mas você não tem nenhum filme/série com ele na sua lista M3U atual.</p>
                 </div>
             `;

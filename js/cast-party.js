@@ -45,10 +45,6 @@ function castMedia(url, title, poster) {
 // Watch Party (Assistir com Amigos) via Firebase
 // ----------------------------------------------------
 class WatchParty {
-    static db = firebase.firestore();
-    static currentSession = null;
-    static isHost = false;
-
     static async createParty(item) {
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         
@@ -118,3 +114,7 @@ class WatchParty {
         });
     }
 }
+
+WatchParty.db = typeof firebase !== 'undefined' ? firebase.firestore() : null;
+WatchParty.currentSession = null;
+WatchParty.isHost = false;

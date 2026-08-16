@@ -1,0 +1,14 @@
+{
+  "id": "com.iptvpremium.app",
+  "version": "1.0.0",
+  "vendor": "IPTV Premium",
+  "type": "web",
+  "main": "index.html",
+  "title": "IPTV Premium",
+  "icon": "assets/icon-80.png",
+  "largeIcon": "assets/icon-130.png",
+  "bgColor": "#0a0a0a",
+  "resolution": "1920x1080",
+  "transparent": false,
+  "appDescription": "Aplicativo de IPTV Profissional e Rápido"
+}

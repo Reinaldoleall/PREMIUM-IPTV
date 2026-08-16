@@ -47,88 +47,291 @@ document.addEventListener('DOMContentLoaded', async () => {
         UIManager.hideDetails();
     });
 
-    document.getElementById('btn-save-source').addEventListener('click', async () => {
-        const nameInput = document.getElementById('input-source-name');
-        const urlInput = document.getElementById('input-source-url');
-        const fileInput = document.getElementById('input-source-file');
+    // Remote Sync Logic
+    let syncUnsubscribe = null;
+    
+    document.getElementById('btn-remote-sync').addEventListener('click', async () => {
+        UIManager.showModal('modal-remote-sync');
+        const codeDisplay = document.getElementById('sync-code-display');
+        const statusText = document.getElementById('sync-status');
+        const spinner = document.getElementById('sync-spinner');
         
-        if (nameInput.value && (urlInput.value || (fileInput.files && fileInput.files.length > 0))) {
-            const btn = document.getElementById('btn-save-source');
+        codeDisplay.textContent = 'GERANDO...';
+        statusText.textContent = 'Conectando ao servidor...';
+        statusText.style.color = 'var(--text-secondary)';
+        spinner.style.display = 'inline-block';
+
+        try {
+            const db = firebase.firestore();
+            const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+            
+            await db.collection('devices').doc(code).set({
+                status: 'waiting',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            codeDisplay.textContent = code.substring(0,3) + ' ' + code.substring(3);
+            statusText.textContent = 'Aguardando envio pelo painel remoto...';
+            
+            syncUnsubscribe = db.collection('devices').doc(code).onSnapshot(async (doc) => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    if (data.processed === false) {
+                        statusText.textContent = 'Recebendo lista, por favor aguarde...';
+                        statusText.style.color = 'var(--accent-gold)';
+                        try {
+                            if (data.type === 'xtream') {
+                                await XtreamAPI.fetchAndParse(data.source, data.username, data.password);
+                                
+                                // Auto-resolve EPG
+                                const baseUrl = data.source.endsWith('/') ? data.source.slice(0, -1) : data.source;
+                                const epgUrl = `${baseUrl}/xmltv.php?username=${data.username}&password=${data.password}`;
+                                await EPGParser.setStoredEpgUrl(epgUrl);
+                                document.getElementById('input-epg-url').value = epgUrl;
+                            } else {
+                                await M3UParser.fetchAndParse(data.source);
+                            }
+                            
+                            await DB.saveSource({
+                                name: data.name || 'Lista Remota',
+                                url: data.source,
+                                type: data.type === 'xtream' ? 'XTREAM' : 'M3U',
+                                username: data.username,
+                                password: data.password
+                            });
+                            
+                            await db.collection('devices').doc(code).update({ processed: true });
+                            
+                            statusText.textContent = 'Sincronizado com Sucesso!';
+                            statusText.style.color = 'var(--status-success)';
+                            spinner.style.display = 'none';
+                            
+                            setTimeout(() => {
+                                UIManager.hideModal('modal-remote-sync');
+                                UIManager.renderSources('sources-list');
+                                loadViewData(document.querySelector('.nav-item.active').getAttribute('data-view'));
+                            }, 2000);
+                            
+                            if (syncUnsubscribe) {
+                                syncUnsubscribe();
+                                syncUnsubscribe = null;
+                            }
+                            
+                        } catch (e) {
+                            console.error("Sync error:", e);
+                            statusText.textContent = 'Erro ao sincronizar: ' + e.message;
+                            statusText.style.color = 'var(--primary-red)';
+                            await db.collection('devices').doc(code).update({ status: 'error', error: e.message });
+                        }
+                    }
+                }
+            });
+
+        } catch (e) {
+            console.error(e);
+            codeDisplay.textContent = 'ERRO';
+            statusText.textContent = 'Falha ao gerar código: ' + e.message;
+            statusText.style.color = 'var(--primary-red)';
+            spinner.style.display = 'none';
+        }
+    });
+
+    document.querySelectorAll('.modal-close-sync').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UIManager.hideModal('modal-remote-sync');
+            if (syncUnsubscribe) {
+                syncUnsubscribe();
+                syncUnsubscribe = null;
+            }
+        });
+    });
+
+    const btnForceUpdate = document.getElementById('btn-force-update');
+    if (btnForceUpdate) {
+        btnForceUpdate.addEventListener('click', async () => {
+            const btn = document.getElementById('btn-force-update');
             btn.textContent = 'Carregando...';
             btn.disabled = true;
+            document.getElementById('loading-overlay').style.display = 'flex';
+        
+        try {
+            const sources = await DB.getSources();
+            if(!sources || sources.length === 0) {
+                alert('Nenhuma fonte configurada.');
+                return;
+            }
+            let updated = false;
+            for(let source of sources) {
+                if(source.url && source.url !== 'local_file') {
+                    const strategies = [
+                        { name: 'Direct Fetch', url: source.url },
+                        { name: 'Vercel Proxy', url: `/api/proxy?url=${encodeURIComponent(source.url)}` },
+                        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(source.url)}` },
+                        { name: 'CorsProxy.io', url: `https://corsproxy.io/?${encodeURIComponent(source.url)}` }
+                    ];
 
-            try {
-                let parsedData;
+                    for (let strategy of strategies) {
+                        try {
+                            // true = CLear the DB completely to avoid duplicates, just like adding a new list
+                            await M3UParser.fetchAndParse(strategy.url, true);
+                            source.last_updated = Date.now();
+                            await DB.saveSource(source);
+                            updated = true;
+                            break;
+                        } catch (e) {}
+                    }
+                }
+            }
+            if(updated) {
+                alert('Conteúdos atualizados com sucesso!');
+                window.dispatchEvent(new Event('sourcesChanged'));
+            } else {
+                alert('Nenhum conteúdo pôde ser atualizado. Verifique a URL da lista.');
+            }
+        } catch(e) {
+            console.error(e);
+            alert('Erro: ' + e.message);
+        } finally {
+            document.getElementById('loading-overlay').style.display = 'none';
+            btn.textContent = 'Atualizar Conteúdos (Forçar)';
+            btn.disabled = false;
+        }
+    });
+}
+
+    // Tabs Logic
+    const tabM3u = document.getElementById('tab-m3u');
+    const tabXtream = document.getElementById('tab-xtream');
+    const inputsM3u = document.getElementById('source-inputs-m3u');
+    const inputsXtream = document.getElementById('source-inputs-xtream');
+
+    let currentSourceType = 'm3u';
+
+    if (tabM3u && tabXtream) {
+        tabM3u.addEventListener('click', () => {
+            tabM3u.classList.add('active');
+            tabXtream.classList.remove('active');
+            inputsM3u.style.display = 'block';
+            inputsXtream.style.display = 'none';
+            currentSourceType = 'm3u';
+        });
+        tabXtream.addEventListener('click', () => {
+            tabXtream.classList.add('active');
+            tabM3u.classList.remove('active');
+            inputsXtream.style.display = 'block';
+            inputsM3u.style.display = 'none';
+            currentSourceType = 'xtream';
+        });
+    }
+
+    document.getElementById('btn-save-source').addEventListener('click', async () => {
+        const nameInput = document.getElementById('input-source-name');
+        const btn = document.getElementById('btn-save-source');
+        
+        if (!nameInput.value) {
+            alert('Insira um nome para a lista.');
+            return;
+        }
+
+        btn.textContent = 'Carregando...';
+        btn.disabled = true;
+        document.getElementById('loading-overlay').style.display = 'flex';
+
+        try {
+            let parsedData;
+            let finalUrl = '';
+            
+            if (currentSourceType === 'm3u') {
+                const urlInput = document.getElementById('input-source-url');
+                const fileInput = document.getElementById('input-source-file');
+                if (!urlInput.value && (!fileInput.files || fileInput.files.length === 0)) {
+                    throw new Error('Insira uma URL M3U ou selecione um arquivo.');
+                }
                 
                 if (fileInput.files && fileInput.files.length > 0) {
                     const file = fileInput.files[0];
                     const m3uText = await file.text();
                     parsedData = await M3UParser.parse(m3uText);
+                    finalUrl = 'local_file';
                 } else {
+                    finalUrl = urlInput.value;
                     let finalErrorDetails = [];
                     const strategies = [
-                        { name: 'Direct Fetch', url: urlInput.value },
-                        { name: 'Vercel Proxy', url: `/api/proxy?url=${encodeURIComponent(urlInput.value)}` },
-                        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput.value)}` },
-                        { name: 'CorsProxy.io', url: `https://corsproxy.io/?${encodeURIComponent(urlInput.value)}` }
+                        { name: 'Direct Fetch', url: finalUrl },
+                        { name: 'Vercel Proxy', url: `/api/proxy?url=${encodeURIComponent(finalUrl)}` },
+                        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}` },
+                        { name: 'CorsProxy.io', url: `https://corsproxy.io/?${encodeURIComponent(finalUrl)}` }
                     ];
 
                     let success = false;
                     for (let strategy of strategies) {
                         try {
-                            console.log(`[IPTV Web] Tentando carregar via: ${strategy.name}`);
+                            console.log(`[IPTV Web] Tentando carregar M3U via: ${strategy.name}`);
                             parsedData = await M3UParser.fetchAndParse(strategy.url);
                             success = true;
                             break;
                         } catch (e) {
-                            console.warn(`[IPTV Web] Falha na estratégia ${strategy.name}:`, e.message);
                             finalErrorDetails.push(`${strategy.name} falhou: ${e.code || e.message}`);
                         }
                     }
-
                     if (!success) {
-                        let errorMsg = '❌ Falha ao carregar a lista. Nenhuma rota de conexão funcionou.\n\nDetalhes do Diagnóstico:\n';
-                        finalErrorDetails.forEach(d => errorMsg += `- ${d}\n`);
-                        
-                        if (finalErrorDetails.some(d => d.includes('UPSTREAM_ERROR') || d.match(/HTTP_(403|401|406)/))) {
-                            errorMsg += '\n🛑 DIAGNÓSTICO FINAL: O servidor de origem (seu provedor IPTV) recusou a requisição. Ele está bloqueando o acesso do nosso servidor Vercel (WAF/Anti-Scraper) ou exigindo autenticação especial. NÃO é um erro de CORS do navegador.';
-                        } else if (finalErrorDetails.every(d => d.includes('NETWORK_CORS_ERROR'))) {
-                            errorMsg += '\n🛑 DIAGNÓSTICO FINAL: Erro de CORS estrito ou falha de rede. Nenhum proxy conseguiu alcançar a URL de forma limpa.';
-                        } else if (finalErrorDetails.some(d => d.includes('TIMEOUT'))) {
-                            errorMsg += '\n🛑 DIAGNÓSTICO FINAL: O servidor IPTV demorou muito para responder (Timeout > 30s) e a requisição foi abortada.';
-                        }
-                        
-                        errorMsg += '\n\n✅ SOLUÇÃO GARANTIDA: Baixe o arquivo .m3u da sua lista e utilize a opção "Ou faça upload do arquivo" logo abaixo.';
+                        let errorMsg = '❌ Falha ao carregar a lista M3U.\n\nDetalhes:\n' + finalErrorDetails.join('\n');
+                        errorMsg += '\n\n✅ SOLUÇÃO GARANTIDA: Baixe o arquivo .m3u da sua lista e faça o upload.';
                         alert(errorMsg);
                         throw new Error("All fetch strategies failed.");
                     }
                 }
+            } else if (currentSourceType === 'xtream') {
+                const hostInput = document.getElementById('input-xtream-host');
+                const userInput = document.getElementById('input-xtream-user');
+                const passInput = document.getElementById('input-xtream-pass');
                 
-                await DB.saveChannels(parsedData.channels);
-                await DB.saveMovies(parsedData.movies);
-                await DB.saveSeries(parsedData.series);
-                
-                await DB.saveSource({ 
-                    name: nameInput.value, 
-                    url: fileInput.files && fileInput.files.length > 0 ? 'local_file' : urlInput.value 
-                });
-                
-                UIManager.hideModal('modal-add-source');
-                UIManager.renderSources('sources-list');
-                loadViewData(document.querySelector('.nav-item.active').getAttribute('data-view'));
-            } catch (error) {
-                if (error.message !== "All fetch strategies failed.") {
-                    alert('Erro inesperado ao processar a lista: ' + error.message);
+                if (!hostInput.value || !userInput.value || !passInput.value) {
+                    throw new Error('Preencha todos os campos do Xtream Codes.');
                 }
-            } finally {
-                btn.textContent = 'Salvar';
-                btn.disabled = false;
-                nameInput.value = '';
-                urlInput.value = '';
-                fileInput.value = '';
+                
+                await XtreamAPI.fetchAndParse(hostInput.value, userInput.value, passInput.value);
+                finalUrl = hostInput.value;
+
+                // Auto-resolve EPG
+                const baseUrl = finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : finalUrl;
+                const epgUrl = `${baseUrl}/xmltv.php?username=${userInput.value}&password=${passInput.value}`;
+                await EPGParser.setStoredEpgUrl(epgUrl);
+                document.getElementById('input-epg-url').value = epgUrl;
             }
-        } else {
-            alert('Insira um nome e uma URL ou Arquivo.');
+            
+            await DB.saveSource({ 
+                name: nameInput.value, 
+                url: finalUrl,
+                type: currentSourceType === 'xtream' ? 'XTREAM' : 'M3U',
+                username: currentSourceType === 'xtream' ? document.getElementById('input-xtream-user').value : undefined,
+                password: currentSourceType === 'xtream' ? document.getElementById('input-xtream-pass').value : undefined,
+                last_updated: Date.now()
+            });
+            
+            UIManager.hideModal('modal-add-source');
+            UIManager.renderSources('sources-list');
+            loadViewData(document.querySelector('.nav-item.active').getAttribute('data-view'));
+            alert('Fonte adicionada com sucesso!');
+            nameInput.value = '';
+            document.getElementById('input-source-url').value = '';
+            document.getElementById('input-source-file').value = '';
+            document.getElementById('input-xtream-host').value = '';
+            document.getElementById('input-xtream-user').value = '';
+            document.getElementById('input-xtream-pass').value = '';
+            
+            // Reload settings to show new source
+            loadViewData('settings');
+
+        } catch (error) {
+            console.error('Save Source Error:', error);
+            if(error.message !== "All fetch strategies failed.") {
+                alert('Erro ao processar fonte: ' + error.message);
+            }
+        } finally {
+            document.getElementById('loading-overlay').style.display = 'none';
+            btn.textContent = 'Adicionar Fonte';
+            btn.disabled = false;
         }
     });
 
@@ -182,23 +385,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function loadViewData(viewId) {
         if (viewId === 'home') {
-            const movies = await DB.getMovies();
-            const series = await DB.getSeries();
+            // Home tab: get small samples from DB.getPaginated
+            const moviesSample = await DB.getPaginated('movies', null, 0, 10);
+            const seriesSample = await DB.getPaginated('series', null, 0, 10);
             const history = await DB.getHistory();
             
-            // Randomize trending or use newly added
-            const trending = [...movies, ...series].sort(() => 0.5 - Math.random());
+            const trending = [...moviesSample, ...seriesSample].sort(() => 0.5 - Math.random());
             
             UIManager.renderCarousel('carousel-continue', history, (item) => Player.play(item));
             UIManager.renderCarousel('carousel-trending', trending, (item) => {
-                const type = movies.includes(item) ? 'movie' : 'series';
+                const type = item.seasons ? 'series' : 'movie';
                 UIManager.showDetails(item, type, (i) => Player.play(i));
             });
 
-            // Set a random movie as Hero Banner, fetching its backdrop first
-            if(movies.length > 0) {
-                const heroMovie = movies[Math.floor(Math.random() * Math.min(10, movies.length))];
-                // Fetch details to ensure we get the backdrop
+            if(moviesSample.length > 0) {
+                const heroMovie = moviesSample[Math.floor(Math.random() * moviesSample.length)];
                 const tmdbData = await TmdbApi.searchMovie(heroMovie.name);
                 if(tmdbData) {
                     const details = await TmdbApi.getDetails(tmdbData.id, 'movie');
@@ -211,39 +412,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
         } else if (viewId === 'movies') {
-            currentMovies = await DB.getMovies();
-            UIManager.renderFilters('filters-movies', currentMovies, (group, favUrls) => {
-                let filtered = currentMovies;
-                if (group === '__FAVORITES__') filtered = currentMovies.filter(m => favUrls.includes(m.url));
-                else if (group) filtered = currentMovies.filter(m => m.group === group);
-                UIManager.renderGrid('grid-movies', filtered, (item) => UIManager.showDetails(item, 'movie', (i) => Player.play(i)));
+            UIManager.renderFilters('filters-movies', 'movies', (group) => {
+                UIManager.renderGridPaginated('grid-movies', async (page, pageSize) => {
+                    if (group === '__FAVORITES__') return (await DB.getFavorites()).slice(page * pageSize, (page + 1) * pageSize);
+                    return await DB.getPaginated('movies', group, page, pageSize);
+                }, (item) => UIManager.showDetails(item, 'movie', (i) => Player.play(i)));
             });
-            UIManager.renderGrid('grid-movies', currentMovies, (item) => UIManager.showDetails(item, 'movie', (i) => Player.play(i)));
+            UIManager.renderGridPaginated('grid-movies', async (page, pageSize) => {
+                return await DB.getPaginated('movies', null, page, pageSize);
+            }, (item) => UIManager.showDetails(item, 'movie', (i) => Player.play(i)));
 
         } else if (viewId === 'series') {
-            currentSeries = await DB.getSeries();
-            UIManager.renderFilters('filters-series', currentSeries, (group, favUrls) => {
-                let filtered = currentSeries;
-                if (group === '__FAVORITES__') filtered = currentSeries.filter(s => favUrls.includes(s.url));
-                else if (group) filtered = currentSeries.filter(s => s.group === group);
-                UIManager.renderGrid('grid-series', filtered, (item) => UIManager.showDetails(item, 'series', (i) => Player.play(i)));
+            UIManager.renderFilters('filters-series', 'series', (group) => {
+                UIManager.renderGridPaginated('grid-series', async (page, pageSize) => {
+                    if (group === '__FAVORITES__') return (await DB.getFavorites()).slice(page * pageSize, (page + 1) * pageSize);
+                    return await DB.getPaginated('series', group, page, pageSize);
+                }, (item) => UIManager.showDetails(item, 'series', (i) => Player.play(i)));
             });
-            UIManager.renderGrid('grid-series', currentSeries, (item) => UIManager.showDetails(item, 'series', (i) => Player.play(i)));
+            UIManager.renderGridPaginated('grid-series', async (page, pageSize) => {
+                return await DB.getPaginated('series', null, page, pageSize);
+            }, (item) => UIManager.showDetails(item, 'series', (i) => Player.play(i)));
 
         } else if (viewId === 'live') {
-            currentChannels = await DB.getChannels();
-            
-            // Load EPG if available
             const epgUrl = await EPGParser.getStoredEpgUrl();
             if (epgUrl && !currentEpgData) {
-                try {
-                    currentEpgData = await EPGParser.fetchAndParse(epgUrl);
-                } catch(e) { console.error("Could not load EPG in background"); }
+                try { currentEpgData = await EPGParser.fetchAndParse(epgUrl); } 
+                catch(e) { console.error("Could not load EPG"); }
             }
 
             const playChannel = (item) => {
                 Player.play(item);
-                // Show Now Playing EPG
                 const epgBox = document.getElementById('epg-now-playing');
                 if (currentEpgData && item.tvgId && currentEpgData[item.tvgId]) {
                     const prog = currentEpgData[item.tvgId].find(p => p.isNowPlaying);
@@ -265,13 +463,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else { epgBox.style.display = 'none'; }
             };
 
-            UIManager.renderFilters('filters-live', currentChannels, (group, favUrls) => {
-                let filtered = currentChannels;
-                if (group === '__FAVORITES__') filtered = currentChannels.filter(c => favUrls.includes(c.url));
-                else if (group) filtered = currentChannels.filter(c => c.group === group);
-                UIManager.renderGrid('grid-live', filtered, playChannel);
+            UIManager.renderFilters('filters-live', 'channels', (group) => {
+                UIManager.renderGridPaginated('grid-live', async (page, pageSize) => {
+                    if (group === '__FAVORITES__') return (await DB.getFavorites()).slice(page * pageSize, (page + 1) * pageSize);
+                    return await DB.getPaginated('channels', group, page, pageSize);
+                }, playChannel);
             });
-            UIManager.renderGrid('grid-live', currentChannels, playChannel);
+            UIManager.renderGridPaginated('grid-live', async (page, pageSize) => {
+                return await DB.getPaginated('channels', null, page, pageSize);
+            }, playChannel);
 
         } else if (viewId === 'favorites') {
             const favs = await DB.getFavorites();
@@ -289,20 +489,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Live search functionality
-    const setupSearch = (inputId, getItems, gridId, type) => {
-        document.getElementById(inputId).addEventListener('input', async (e) => {
-            const query = e.target.value.toLowerCase();
-            const items = await getItems();
-            const filtered = items.filter(i => i.name.toLowerCase().includes(query));
-            UIManager.renderGrid(gridId, filtered, (item) => {
-                if(type === 'channel') Player.play(item);
-                else UIManager.showDetails(item, type, (i) => Player.play(i));
-            });
+    const setupSearch = (inputId, gridId, type) => {
+        let searchTimeout;
+        document.getElementById(inputId).addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                const query = e.target.value.trim();
+                if(!query) {
+                    // Reset to unfiltered
+                    loadViewData(type === 'channels' ? 'live' : type);
+                    return;
+                }
+                const items = await DB.search(type, query);
+                UIManager.renderGrid(gridId, items, (item) => {
+                    if(type === 'channels') Player.play(item);
+                    else UIManager.showDetails(item, type, (i) => Player.play(i));
+                });
+            }, 500);
         });
     };
 
-    setupSearch('search-movies', () => currentMovies, 'grid-movies', 'movie');
-    setupSearch('search-series', () => currentSeries, 'grid-series', 'series');
+    setupSearch('search-movies', 'grid-movies', 'movies');
+    setupSearch('search-series', 'grid-series', 'series');
+    setupSearch('search-live', 'grid-live', 'channels');
+
     // Profiles System
     const profilesOverlay = document.getElementById('profiles-overlay');
     const appContainer = document.getElementById('app-container');
@@ -330,6 +540,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Initialize after profile is selected so history/favs load for this profile
                 switchView('home');
                 UIManager.renderSources('sources-list');
+                
+                // Dispara sincronização em segundo plano
+                syncSourcesBackground();
             };
 
             card.addEventListener('click', selectProfile);
@@ -453,8 +666,114 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (currentTryingKey) attemptLogin(currentTryingKey, true);
     });
 
+    async function syncSourcesBackground() {
+        const sources = await DB.getSources();
+        if(!sources || sources.length === 0) return;
+        
+        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        let updated = false;
+
+        for(let source of sources) {
+            if(source.url && source.url !== 'local_file') {
+                if (source.last_updated && (now - source.last_updated < TWENTY_FOUR_HOURS)) {
+                    console.log(`[Background Sync] Skipped ${source.name} (updated less than 24h ago).`);
+                    continue;
+                }
+
+                try {
+                    console.log(`[Background Sync] Checking updates for ${source.name}...`);
+                    // We try to fetch the list silently
+                    const strategies = [
+                        { name: 'Direct Fetch', url: source.url },
+                        { name: 'Vercel Proxy', url: `/api/proxy?url=${encodeURIComponent(source.url)}` },
+                        { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(source.url)}` },
+                        { name: 'CorsProxy.io', url: `https://corsproxy.io/?${encodeURIComponent(source.url)}` }
+                    ];
+
+                    let parsedData = null;
+                    for (let strategy of strategies) {
+                        try {
+                            // false = DO NOT clear the DB, just parse and we will append/overwrite
+                            parsedData = await M3UParser.fetchAndParse(strategy.url, false);
+                            break; // Success
+                        } catch (e) {
+                            // Silently fail to next strategy
+                        }
+                    }
+
+                    if(parsedData && parsedData.channels && parsedData.channels.length > 0) {
+                        // Very simple check: if channel length differs or just overwrite blindly in background
+                        // A true delta sync would require hashing, but blind overwrite in background is safe enough with localForage
+                        await DB.saveChannels(parsedData.channels);
+                        await DB.saveMovies(parsedData.movies);
+                        await DB.saveSeries(parsedData.series);
+                        
+                        // Update last_updated timestamp for the source
+                        source.last_updated = Date.now();
+                        await DB.saveSource(source);
+
+                        updated = true;
+                    }
+                } catch(e) {
+                    console.warn(`[Background Sync] Failed for ${source.name}`, e);
+                }
+            }
+        }
+        
+        if(updated) {
+            console.log('[Background Sync] Lists updated in background.');
+            // Dispatch event to refresh current view if needed
+            window.dispatchEvent(new Event('sourcesChanged'));
+            
+            // Show a non-intrusive toast
+            const toast = document.createElement('div');
+            toast.style.position = 'fixed';
+            toast.style.bottom = '24px';
+            toast.style.right = '24px';
+            toast.style.background = 'var(--accent-gold)';
+            toast.style.color = '#000';
+            toast.style.padding = '12px 24px';
+            toast.style.borderRadius = '8px';
+            toast.style.fontWeight = 'bold';
+            toast.style.zIndex = '9999';
+            toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+            toast.innerText = 'Listas atualizadas em segundo plano!';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+    }
+
     async function bootApp() {
-        // Temporary timeout to simulate loading visually
+        const statusText = document.getElementById('splash-status-text');
+        if (statusText) statusText.textContent = "Verificando configurações remotas...";
+
+        try {
+            const db = typeof firebase !== 'undefined' ? firebase.firestore() : null;
+            if (db) {
+                const settingsDoc = await db.collection('settings').doc('config').get();
+                if (settingsDoc.exists) {
+                    const data = settingsDoc.data();
+                    if (data.isMaintenance) {
+                        document.getElementById('splash-screen').style.display = 'none';
+                        document.getElementById('maintenance-screen').style.display = 'flex';
+                        document.getElementById('maintenance-message').textContent = data.maintenanceMessage || "Estamos em manutenção. Volte mais tarde.";
+                        return; // Halt boot sequence
+                    }
+                    if (data.requireUpdate) {
+                        document.getElementById('splash-screen').style.display = 'none';
+                        document.getElementById('update-screen').style.display = 'flex';
+                        document.getElementById('update-message').textContent = data.updateMessage || "Uma nova atualização é obrigatória.";
+                        return; // Halt boot sequence
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("Falha ao checar settings remotos. Continuando...", e);
+        }
+
+        if (statusText) statusText.textContent = "Verificando Licença...";
+
         setTimeout(async () => {
             const savedLicense = await LicenseManager.getSavedLicense();
             if (savedLicense) {

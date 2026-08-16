@@ -23,7 +23,6 @@ class ProfileManager {
 }
 
 class ParentalControl {
-    static PIN_KEY = 'IPTV_PARENTAL_PIN';
     
     static async hasPin() {
         const pin = await localforage.getItem(this.PIN_KEY);
@@ -45,3 +44,5 @@ class ParentalControl {
         return lower.includes('+18') || lower.includes('adult') || lower.includes('xxx') || lower.includes('porn');
     }
 }
+
+ParentalControl.PIN_KEY = 'IPTV_PARENTAL_PIN';

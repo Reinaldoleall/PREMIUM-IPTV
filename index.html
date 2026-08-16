@@ -4,14 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IPTV Premium</title>
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e50914">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="assets/icon-192.png">
+    
     <link rel="stylesheet" href="css/style.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- Material Symbols Outlined -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    
-    <!-- Shaka Player (Web equivalent of ExoPlayer) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.compiled.js"></script>
+    <!-- Material Icons Outlined -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.css">
     
     <!-- Google Cast Web SDK -->
     <script type="text/javascript" src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
@@ -43,9 +49,22 @@
             
             <div id="splash-loading" style="display:block; margin-top: 32px;">
                 <div class="spinner"></div>
-                <p style="color:var(--text-secondary); margin-top: 16px;">Verificando Licença...</p>
+                <p id="splash-status-text" style="color:var(--text-secondary); margin-top: 16px;">Verificando configurações remotas...</p>
             </div>
         </div>
+    </div>
+
+    <!-- Maintenance / Update Screens -->
+    <div class="splash-screen" id="maintenance-screen" style="display: none; background: rgba(0,0,0,0.9); z-index: 10000; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+        <span class="material-icons-outlined" style="font-size: 64px; color: var(--accent-gold); margin-bottom: 24px;">build</span>
+        <h2 style="font-size: 32px; color: white; margin-bottom: 16px;">Manutenção Programada</h2>
+        <p id="maintenance-message" style="color: var(--text-secondary); max-width: 600px; font-size: 18px; line-height: 1.5;"></p>
+    </div>
+
+    <div class="splash-screen" id="update-screen" style="display: none; background: rgba(0,0,0,0.9); z-index: 10000; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+        <span class="material-icons-outlined" style="font-size: 64px; color: var(--primary-red); margin-bottom: 24px;">update</span>
+        <h2 style="font-size: 32px; color: white; margin-bottom: 16px;">Atualização Necessária</h2>
+        <p id="update-message" style="color: var(--text-secondary); max-width: 600px; font-size: 18px; line-height: 1.5; margin-bottom: 32px;"></p>
     </div>
 
     <!-- Profiles Selection Overlay -->
@@ -70,38 +89,38 @@
             
             <ul class="nav-menu">
                 <li class="nav-item active" data-view="home" tabindex="0">
-                    <span class="material-symbols-outlined">home</span>
+                    <span class="material-icons-outlined">home</span>
                     <span>Início</span>
                 </li>
                 <li class="nav-item divider"></li>
                 <li class="nav-item" data-view="movies" tabindex="0">
-                    <span class="material-symbols-outlined">movie</span>
+                    <span class="material-icons-outlined">movie</span>
                     <span>Filmes</span>
                 </li>
                 <li class="nav-item" data-view="series" tabindex="0">
-                    <span class="material-symbols-outlined">tv_gen</span>
+                    <span class="material-icons-outlined">tv_gen</span>
                     <span>Séries</span>
                 </li>
                 <li class="nav-item" data-view="live" tabindex="0">
-                    <span class="material-symbols-outlined">live_tv</span>
+                    <span class="material-icons-outlined">live_tv</span>
                     <span>TV Ao Vivo</span>
                 </li>
                 <li class="nav-item" data-view="actor-search" tabindex="0">
-                    <span class="material-symbols-outlined">person_search</span>
+                    <span class="material-icons-outlined">person_search</span>
                     <span>Atores</span>
                 </li>
                 <li class="nav-item divider"></li>
                 <li class="nav-item" data-view="favorites" tabindex="0">
-                    <span class="material-symbols-outlined">favorite</span>
+                    <span class="material-icons-outlined">favorite</span>
                     <span>Favoritos</span>
                 </li>
                 <li class="nav-item" data-view="history" tabindex="0">
-                    <span class="material-symbols-outlined">history</span>
+                    <span class="material-icons-outlined">history</span>
                     <span>Histórico</span>
                 </li>
                 <li class="nav-item divider"></li>
                 <li class="nav-item" data-view="settings" tabindex="0">
-                    <span class="material-symbols-outlined">settings</span>
+                    <span class="material-icons-outlined">settings</span>
                     <span>Configurações</span>
                 </li>
             </ul>
@@ -118,6 +137,21 @@
                     </div>
                 </div>
                 
+                <div class="home-shortcuts" style="display: flex; gap: 24px; padding: 0 40px; margin-top: -30px; position: relative; z-index: 10;">
+                    <div class="shortcut-card" onclick="document.querySelector('[data-view=\'movies\']').click()" tabindex="0">
+                        <span class="material-icons-outlined" style="font-size: 48px; color: var(--accent-gold); margin-bottom: 8px;">movie</span>
+                        <h3 style="margin: 0; font-size: 18px;">Filmes</h3>
+                    </div>
+                    <div class="shortcut-card" onclick="document.querySelector('[data-view=\'series\']').click()" tabindex="0">
+                        <span class="material-icons-outlined" style="font-size: 48px; color: var(--accent-gold); margin-bottom: 8px;">tv_gen</span>
+                        <h3 style="margin: 0; font-size: 18px;">Séries</h3>
+                    </div>
+                    <div class="shortcut-card" onclick="document.querySelector('[data-view=\'live\']').click()" tabindex="0">
+                        <span class="material-icons-outlined" style="font-size: 48px; color: var(--accent-gold); margin-bottom: 8px;">live_tv</span>
+                        <h3 style="margin: 0; font-size: 18px;">TV Ao Vivo</h3>
+                    </div>
+                </div>
+
                 <div class="carousel-section" id="section-continue">
                     <h3>Continuar Assistindo</h3>
                     <div class="carousel-container" id="carousel-continue"></div>
@@ -134,14 +168,14 @@
                 <div class="header-actions">
                     <h2 class="view-title">Filmes</h2>
                     <div class="search-box">
-                        <span class="material-symbols-outlined">search</span>
+                        <span class="material-icons-outlined">search</span>
                         <input type="text" id="search-movies" placeholder="Buscar filmes...">
                     </div>
                 </div>
                 <div class="category-filters" id="filters-movies"></div>
                 <div class="content-grid" id="grid-movies">
                     <div class="empty-state">
-                        <span class="material-symbols-outlined">inbox</span>
+                        <span class="material-icons-outlined">inbox</span>
                         <p>Nenhuma lista carregada.</p>
                     </div>
                 </div>
@@ -152,7 +186,7 @@
                 <div class="header-actions">
                     <h2 class="view-title">Séries</h2>
                     <div class="search-box">
-                        <span class="material-symbols-outlined">search</span>
+                        <span class="material-icons-outlined">search</span>
                         <input type="text" id="search-series" placeholder="Buscar séries...">
                     </div>
                 </div>
@@ -165,7 +199,7 @@
                 <div class="header-actions">
                     <h2 class="view-title">TV Ao Vivo</h2>
                     <div class="search-box">
-                        <span class="material-symbols-outlined">search</span>
+                        <span class="material-icons-outlined">search</span>
                         <input type="text" id="search-live" placeholder="Buscar canais...">
                     </div>
                 </div>
@@ -180,7 +214,7 @@
                 <div class="header-actions">
                     <h2 class="view-title">Busca por Ator</h2>
                     <div class="search-box">
-                        <span class="material-symbols-outlined">search</span>
+                        <span class="material-icons-outlined">search</span>
                         <input type="text" id="search-actors" placeholder="Nome do ator (ex: Tom Cruise)...">
                     </div>
                 </div>
@@ -209,6 +243,8 @@
                         <h3>Fontes de IPTV</h3>
                         <div class="sources-list" id="sources-list"></div>
                         <button class="btn btn-primary" id="btn-add-source">Adicionar Fonte</button>
+                        <button class="btn btn-secondary" id="btn-remote-sync" style="margin-top: 8px;">Sincronização Remota</button>
+                        <button class="btn btn-secondary" id="btn-force-update" style="margin-top: 8px;">Atualizar Conteúdos (Forçar)</button>
                     </div>
                     
                     <div class="settings-card" style="margin-top: 24px;">
@@ -233,7 +269,7 @@
         <div class="detail-backdrop" id="detail-backdrop"></div>
         <div class="detail-content-wrapper">
             <button class="btn-close-detail" id="btn-close-detail">
-                <span class="material-symbols-outlined">arrow_back</span>
+                <span class="material-icons-outlined">arrow_back</span>
             </button>
             
             <div class="detail-main">
@@ -241,7 +277,7 @@
                 <div class="detail-info">
                     <h1 id="detail-title">Title</h1>
                     <div class="detail-meta">
-                        <span id="detail-rating" class="meta-tag rating"><span class="material-symbols-outlined">star</span> 0.0</span>
+                        <span id="detail-rating" class="meta-tag rating"><span class="material-icons-outlined">star</span> 0.0</span>
                         <span id="detail-year" class="meta-tag">YYYY</span>
                         <span id="detail-genres" class="meta-tag">Genres</span>
                     </div>
@@ -249,18 +285,18 @@
                     
                     <div class="detail-actions">
                         <button class="btn btn-primary btn-play-large" id="btn-detail-play">
-                            <span class="material-symbols-outlined">play_arrow</span> Assistir
+                            <span class="material-icons-outlined">play_arrow</span> Assistir
                         </button>
                         <button class="btn btn-secondary btn-fav" id="btn-detail-fav">
-                            <span class="material-symbols-outlined">favorite_border</span>
+                            <span class="material-icons-outlined">favorite_border</span>
                         </button>
                         <!-- Botão Cast -->
                         <button class="btn btn-secondary btn-cast" id="btn-cast" style="display:none;" title="Transmitir (Chromecast)">
-                            <span class="material-symbols-outlined">cast</span>
+                            <span class="material-icons-outlined">cast</span>
                         </button>
                         <!-- Botão Watch Party -->
                         <button class="btn btn-secondary btn-party" id="btn-party" title="Watch Party">
-                            <span class="material-symbols-outlined">group</span>
+                            <span class="material-icons-outlined">group</span>
                         </button>
                     </div>
                 </div>
@@ -280,10 +316,10 @@
 
     <!-- Video Player Overlay -->
     <div class="player-overlay" id="player-overlay" style="display: none;">
-        <div class="player-container">
-            <video id="video-player" controls autoplay></video>
+        <div class="player-container" id="video-container">
+            <video id="video-player" autoplay></video>
             <button class="btn-close-player" id="btn-close-player">
-                <span class="material-symbols-outlined">close</span>
+                <span class="material-icons-outlined">close</span>
             </button>
             <div class="player-title" id="player-title"></div>
         </div>
@@ -294,7 +330,7 @@
         <div class="modal">
             <div class="modal-header">
                 <h3>Controle Parental</h3>
-                <span class="material-symbols-outlined modal-close-pin">close</span>
+                <span class="material-icons-outlined modal-close-pin">close</span>
             </div>
             <div class="modal-body">
                 <p>Insira o PIN para acessar este conteúdo adulto:</p>
@@ -313,24 +349,49 @@
     <div class="modal-overlay" id="modal-add-source">
         <div class="modal">
             <div class="modal-header">
-                <h3>Adicionar Lista M3U</h3>
-                <span class="material-symbols-outlined modal-close">close</span>
+                <h3>Adicionar Lista M3U / Xtream</h3>
+                <span class="material-icons-outlined modal-close">close</span>
             </div>
             <div class="modal-body">
-                <p style="margin-bottom: 16px; font-size: 14px; color: var(--text-secondary);">
-                    Nota: Devido a políticas de segurança da Web (CORS), muitos provedores bloqueiam o link direto. Se o link falhar, baixe a lista e faça o upload do arquivo .m3u abaixo.
-                </p>
+                <div class="category-filters" id="source-type-tabs" style="margin-bottom: 16px;">
+                    <div class="filter-chip active" id="tab-m3u">M3U (Link ou Arquivo)</div>
+                    <div class="filter-chip" id="tab-xtream">Xtream Codes</div>
+                </div>
+
                 <div class="input-group">
                     <label>Nome da Lista</label>
                     <input type="text" id="input-source-name" placeholder="Ex: Minha Lista">
                 </div>
-                <div class="input-group">
-                    <label>URL M3U</label>
-                    <input type="url" id="input-source-url" placeholder="http://... (Deixe em branco se usar arquivo)">
+
+                <!-- M3U Inputs -->
+                <div id="source-inputs-m3u">
+                    <p style="margin-bottom: 16px; font-size: 14px; color: var(--text-secondary);">
+                        Nota: Devido a políticas de segurança da Web (CORS), se o link falhar, faça o upload do arquivo .m3u abaixo.
+                    </p>
+                    <div class="input-group">
+                        <label>URL M3U</label>
+                        <input type="url" id="input-source-url" placeholder="http://... (Deixe em branco se usar arquivo)">
+                    </div>
+                    <div class="input-group" style="margin-top: 16px;">
+                        <label>Ou faça upload do arquivo (.m3u)</label>
+                        <input type="file" id="input-source-file" accept=".m3u,.m3u8" style="padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; color: white;">
+                    </div>
                 </div>
-                <div class="input-group" style="margin-top: 16px;">
-                    <label>Ou faça upload do arquivo (.m3u)</label>
-                    <input type="file" id="input-source-file" accept=".m3u,.m3u8" style="padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; color: white;">
+
+                <!-- Xtream Inputs -->
+                <div id="source-inputs-xtream" style="display: none;">
+                    <div class="input-group">
+                        <label>URL do Host</label>
+                        <input type="url" id="input-xtream-host" placeholder="http://dominio.com:porta">
+                    </div>
+                    <div class="input-group" style="margin-top: 16px;">
+                        <label>Usuário</label>
+                        <input type="text" id="input-xtream-user" placeholder="Seu usuário">
+                    </div>
+                    <div class="input-group" style="margin-top: 16px;">
+                        <label>Senha</label>
+                        <input type="password" id="input-xtream-pass" placeholder="Sua senha">
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -340,6 +401,37 @@
         </div>
     </div>
 
+    <!-- Remote Sync Modal -->
+    <div class="modal-overlay" id="modal-remote-sync">
+        <div class="modal" style="text-align: center;">
+            <div class="modal-header">
+                <h3>Sincronização Remota</h3>
+                <span class="material-icons-outlined modal-close-sync">close</span>
+            </div>
+            <div class="modal-body">
+                <p>Acesse o app Android e insira o código abaixo para sincronizar suas listas:</p>
+                <div id="sync-code-display" style="font-size: 36px; letter-spacing: 8px; font-weight: bold; color: var(--accent-gold); margin: 24px 0;">
+                    ------
+                </div>
+                <div id="sync-status" style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Aguardando geração do código...
+                </div>
+                <div id="sync-spinner" class="spinner" style="display: none; border-color: rgba(255,215,0,0.3); border-top-color: var(--accent-gold); margin: 0 auto;"></div>
+            </div>
+            <div class="modal-footer" style="justify-content: center;">
+                <button class="btn btn-secondary modal-close-sync">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(10,10,10,0.9); z-index:9999; flex-direction:column; justify-content:center; align-items:center; color:white;">
+        <div class="spinner" style="width:50px; height:50px; border:4px solid rgba(255,215,0,0.3); border-top:4px solid var(--accent-gold); border-radius:50%; animation:spin 1s linear infinite;"></div>
+        <h2 style="margin-top:20px;">Carregando Lista...</h2>
+        <p style="color:var(--text-secondary);">Por favor, aguarde. Isso pode levar alguns segundos dependendo do tamanho da lista.</p>
+        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+    </div>
+
     <!-- Scripts -->
     <script src="js/firebase-config.js"></script>
     <script src="js/license-manager.js"></script>
@@ -347,11 +439,24 @@
     <script src="js/db.js"></script>
     <script src="js/profiles.js"></script>
     <script src="js/m3u-parser.js"></script>
+    <script src="js/xtream-api.js"></script>
     <script src="js/epg-parser.js"></script>
     <script src="js/cast-party.js"></script>
     <script src="js/player.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/actor-search.js"></script>
+    <script src="js/tv-navigation.js"></script>
     <script src="js/app.js"></script>
+    
+    <!-- PWA Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./service-worker.js')
+            .then(reg => console.log('ServiceWorker registered with scope:', reg.scope))
+            .catch(err => console.error('ServiceWorker registration failed:', err));
+        });
+      }
+    </script>
 </body>
 </html>

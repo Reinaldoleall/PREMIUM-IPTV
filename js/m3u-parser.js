@@ -1,20 +1,18 @@
-class M3UParser {
-    static workerScript = `
+const workerScript = `
         self.onmessage = function(e) {
             const m3uText = e.data;
             const lines = m3uText.split(/\\r?\\n/);
-            const channels = [];
-            const movies = [];
-            const series = [];
+            let channels = [];
+            let movies = [];
+            let rawSeries = [];
 
             let currentName = "Unknown";
             let currentLogo = "";
             let currentGroup = "";
             let currentEpgId = "";
 
-            // Group Series Logic
-            const groupedSeriesMap = {};
-            const rawSeries = [];
+            const episodePattern = /(.+?)\\s*[\\-\\|]?\\s*S(\\d{1,2})\\s*E(\\d{1,2})/i;
+            const yearPattern = /\\b(19\\d{2}|20\\d{2})\\b/;
 
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i].trim();
@@ -42,24 +40,100 @@ class M3UParser {
                 } else if (line.startsWith("#EXTGRP:")) {
                     currentGroup = line.substring(8).trim();
                 } else if (!line.startsWith("#")) {
-                    const item = {
-                        id: btoa(encodeURIComponent(line)),
-                        name: currentName,
-                        url: line,
-                        logo: currentLogo,
-                        group: currentGroup,
-                        epgId: currentEpgId
-                    };
+                    const rawName = currentName;
+                    const group = currentGroup;
+                    const lowerGroup = group.toLowerCase();
+                    const url = line;
+                    const lowerUrl = url.toLowerCase();
 
-                    const lowerGroup = currentGroup.toLowerCase();
-                    const lowerUrl = line.toLowerCase();
-                    
-                    if (lowerGroup.includes("filme") || lowerGroup.includes("movie") || lowerGroup.includes("vod") || lowerUrl.endsWith(".mkv") || lowerUrl.endsWith(".mp4") || lowerUrl.includes("/movie/")) {
-                        movies.push(item);
-                    } else if (lowerGroup.includes("série") || lowerGroup.includes("serie") || lowerGroup.includes("series") || lowerUrl.includes("/series/")) {
-                        rawSeries.push(item);
+                    let isSeries = false;
+                    let isMovie = false;
+
+                    const epMatch = rawName.match(episodePattern);
+                    const hasEpisodePattern = !!epMatch;
+
+                    if (hasEpisodePattern || lowerUrl.includes("/series/")) {
+                        isSeries = true;
+                    } else if (lowerUrl.includes("/movie/") || lowerUrl.includes(".mp4") || lowerUrl.includes(".mkv") || lowerUrl.includes(".avi") || lowerUrl.includes(".rmvb")) {
+                        isMovie = true;
+                    } else if (lowerGroup.includes("canais") || lowerGroup.includes("24h") || lowerGroup.includes("tv ") || lowerGroup === "tv" || lowerGroup.includes("ao vivo") || lowerGroup.includes("live tv") || lowerGroup.includes("esportes") || lowerGroup.includes("notícias") || lowerGroup.includes("abertos") || lowerGroup.includes("documentários")) {
+                        // Live TV
+                    } else if (lowerGroup.includes("serie") || lowerGroup.includes("série") || lowerGroup.includes("anime") || lowerGroup.includes("dorama") || lowerGroup.includes("novela") || lowerGroup.includes("temporada")) {
+                        isSeries = true;
+                    } else if (lowerGroup.includes("filme") || lowerGroup.includes("movie") || lowerGroup.includes("vod") || lowerGroup.includes("cinema") || lowerGroup.includes("lancamento") || lowerGroup.includes("lançamento") || lowerGroup.includes("4k") || lowerGroup.includes("legendado") || lowerGroup.includes("dublado") || lowerGroup.includes("oscar")) {
+                        isMovie = true;
+                    }
+
+                    if (isSeries) {
+                        let seriesName = rawName;
+                        let seasonNum = "1";
+                        let episodeNum = "1";
+
+                        if (hasEpisodePattern) {
+                            seriesName = epMatch[1].trim();
+                            seasonNum = parseInt(epMatch[2], 10).toString();
+                            episodeNum = parseInt(epMatch[3], 10).toString();
+                            if (!seriesName) seriesName = rawName;
+                        } else {
+                            if (group && !lowerGroup.includes("séries") && !lowerGroup.includes("series") && !lowerGroup.includes("serie")) {
+                                seriesName = group;
+                            }
+                        }
+
+                        const lowerSeriesName = seriesName.toLowerCase();
+                        if (lowerSeriesName.startsWith("séries - ") || lowerSeriesName.startsWith("series - ")) {
+                            seriesName = seriesName.substring(9).trim();
+                        } else if (lowerSeriesName.startsWith("série - ")) {
+                            seriesName = seriesName.substring(8).trim();
+                        }
+
+                        rawSeries.push({
+                            name: rawName,
+                            seriesName: seriesName,
+                            season: seasonNum,
+                            episode: episodeNum,
+                            url: url,
+                            logo: currentLogo,
+                            group: group || 'Sem Categoria',
+                            epgId: currentEpgId
+                        });
+
+                    } else if (isMovie) {
+                        let extractedYear = 0;
+                        const ymMatch = rawName.match(yearPattern);
+                        if (ymMatch) extractedYear = parseInt(ymMatch[1], 10);
+                        if (extractedYear === 0 && group) {
+                            const ymgMatch = group.match(yearPattern);
+                            if (ymgMatch) extractedYear = parseInt(ymgMatch[1], 10);
+                        }
+
+                        movies.push({
+                            name: rawName,
+                            url: url,
+                            logo: currentLogo,
+                            group: group || 'Sem Categoria',
+                            epgId: currentEpgId,
+                            year: extractedYear
+                        });
+
+                        if (movies.length >= 300) {
+                            self.postMessage({ type: 'chunk', category: 'movies', data: movies });
+                            movies = [];
+                        }
                     } else {
-                        channels.push(item);
+                        channels.push({
+                            name: rawName,
+                            url: url,
+                            logo: currentLogo,
+                            group: group || 'Sem Categoria',
+                            epgId: currentEpgId,
+                            tvgId: currentEpgId
+                        });
+
+                        if (channels.length >= 300) {
+                            self.postMessage({ type: 'chunk', category: 'channels', data: channels });
+                            channels = [];
+                        }
                     }
 
                     currentName = "Unknown";
@@ -69,32 +143,21 @@ class M3UParser {
                 }
             }
 
+            // Send remaining chunks
+            if (channels.length > 0) self.postMessage({ type: 'chunk', category: 'channels', data: channels });
+            if (movies.length > 0) self.postMessage({ type: 'chunk', category: 'movies', data: movies });
+
+            // Group Series Logic
+            const groupedSeriesMap = {};
             rawSeries.forEach(item => {
-                const match = item.name.match(/(.*?)(?:\\s+[-:]\\s+)?S(\\d+)\\s*E(\\d+)/i) || 
-                              item.name.match(/(.*?)(?:\\s+[-:]\\s+)?Season\\s*(\\d+)\\s*Episode\\s*(\\d+)/i);
-                
-                let seriesName = item.name;
-                let season = 1;
-                let episode = 1;
-                let epName = item.name;
+                const sName = item.seriesName;
+                const season = item.season;
+                const episode = item.episode;
 
-                if (match) {
-                    seriesName = match[1].trim();
-                    season = parseInt(match[2], 10);
-                    episode = parseInt(match[3], 10);
-                } else {
-                    // Try just E01
-                    const epMatch = item.name.match(/(.*?)\\s+E(\\d+)/i);
-                    if (epMatch) {
-                        seriesName = epMatch[1].trim();
-                        episode = parseInt(epMatch[2], 10);
-                    }
-                }
-
-                if (!groupedSeriesMap[seriesName]) {
-                    groupedSeriesMap[seriesName] = {
-                        id: btoa(encodeURIComponent(seriesName)),
-                        name: seriesName,
+                if (!groupedSeriesMap[sName]) {
+                    groupedSeriesMap[sName] = {
+                        id: btoa(encodeURIComponent(sName).substring(0, 50)),
+                        name: sName,
                         logo: item.logo,
                         group: item.group,
                         isSeries: true,
@@ -102,38 +165,53 @@ class M3UParser {
                     };
                 }
                 
-                if (!groupedSeriesMap[seriesName].seasons[season]) {
-                    groupedSeriesMap[seriesName].seasons[season] = [];
+                if (!groupedSeriesMap[sName].seasons[season]) {
+                    groupedSeriesMap[sName].seasons[season] = [];
                 }
                 
-                groupedSeriesMap[seriesName].seasons[season].push({
-                    episode: episode,
-                    name: epName,
+                groupedSeriesMap[sName].seasons[season].push({
+                    episode: parseInt(episode, 10),
+                    name: item.name,
                     url: item.url
                 });
             });
 
-            // Convert to array and sort
+            // Convert to array and chunk
+            let series = [];
             for (let sName in groupedSeriesMap) {
                 const s = groupedSeriesMap[sName];
                 for (let seq in s.seasons) {
                     s.seasons[seq].sort((a,b) => a.episode - b.episode);
                 }
                 series.push(s);
+                if (series.length >= 300) {
+                    self.postMessage({ type: 'chunk', category: 'series', data: series });
+                    series = [];
+                }
             }
+            if (series.length > 0) self.postMessage({ type: 'chunk', category: 'series', data: series });
 
-            self.postMessage({ channels, movies, series });
+            self.postMessage({ type: 'done' });
         };
     `;
 
+class M3UParser {
     static async parse(m3uText) {
         return new Promise((resolve, reject) => {
-            const blob = new Blob([this.workerScript], { type: 'application/javascript' });
+            const blob = new Blob([workerScript], { type: 'application/javascript' });
             const worker = new Worker(URL.createObjectURL(blob));
 
-            worker.onmessage = (e) => {
-                resolve(e.data);
-                worker.terminate();
+            // Setup DB appending handlers
+            worker.onmessage = async (e) => {
+                const msg = e.data;
+                if (msg.type === 'chunk') {
+                    if (msg.category === 'channels') await DB.appendChannels(msg.data);
+                    else if (msg.category === 'movies') await DB.appendMovies(msg.data);
+                    else if (msg.category === 'series') await DB.appendSeries(msg.data);
+                } else if (msg.type === 'done') {
+                    worker.terminate();
+                    resolve({ success: true });
+                }
             };
 
             worker.onerror = (error) => {
@@ -145,8 +223,12 @@ class M3UParser {
         });
     }
 
-    static async fetchAndParse(url) {
+    static async fetchAndParse(url, clearFirst = true) {
         try {
+            if (clearFirst) {
+                await DB.clearContent();
+            }
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
@@ -162,9 +244,7 @@ class M3UParser {
                         errorMsg = errorData.error;
                         errorCode = errorData.code || errorCode;
                     }
-                } catch(e) {
-                    // Not JSON, ignore
-                }
+                } catch(e) {}
 
                 const errorObj = new Error(errorMsg);
                 errorObj.status = response.status;

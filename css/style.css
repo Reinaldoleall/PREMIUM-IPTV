@@ -130,12 +130,12 @@ body {
     color: var(--text-secondary);
 }
 
-.nav-item span.material-symbols-outlined {
+.nav-item span.material-icons-outlined {
     margin-right: 16px;
     font-size: 24px;
 }
 
-.nav-item span:not(.material-symbols-outlined) {
+.nav-item span:not(.material-icons-outlined) {
     font-size: 15px;
     font-weight: 500;
 }
@@ -732,4 +732,72 @@ video {
     font-weight: bold;
     text-shadow: 0 2px 4px rgba(0,0,0,0.8);
     z-index: 10;
+}
+
+/* ==========================================================================
+   TV & Gamepad Navigation (Spatial Navigation)
+   ========================================================================== */
+body.tv-mode .tv-focused,
+body.tv-mode *:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 4px var(--accent-gold), 0 0 20px rgba(255, 215, 0, 0.5) !important;
+    transform: scale(1.05) !important;
+    z-index: 100 !important;
+    position: relative;
+    border-radius: 8px;
+    transition: all 0.2s ease-out !important;
+}
+
+body.tv-mode .card.tv-focused .card-img-container img {
+    opacity: 1 !important;
+    transform: scale(1.05);
+}
+
+body.tv-mode .nav-item.tv-focused {
+    background: rgba(255, 215, 0, 0.1) !important;
+    color: var(--accent-gold) !important;
+}
+
+/* Ocultar barras de rolagem nativas no modo TV para interface mais limpa (10-foot UI) */
+body.tv-mode ::-webkit-scrollbar {
+    width: 0px;
+    height: 0px;
+    background: transparent;
+}
+body.tv-mode {
+    scrollbar-width: none; /* Firefox */
+}
+
+/* Home Shortcuts */
+.home-shortcuts {
+    display: flex;
+    gap: 24px;
+    padding: 0 40px;
+    margin-top: -40px;
+    position: relative;
+    z-index: 10;
+}
+
+.shortcut-card {
+    flex: 1;
+    background: linear-gradient(145deg, #1e1e1e 0%, #121212 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 32px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.shortcut-card:hover, .shortcut-card:focus {
+    transform: translateY(-8px);
+    background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
+    border-color: var(--accent-gold);
+    box-shadow: 0 12px 32px rgba(255,215,0,0.2);
+    outline: none;
 }

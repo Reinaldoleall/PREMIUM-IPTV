@@ -1,9 +1,4 @@
 class TmdbApi {
-    static API_KEY = "39a368e46831b064e387198130b9f541";
-    static BASE_URL = "https://api.themoviedb.org/3";
-    static IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w1280";
-    static POSTER_BASE_URL = "https://image.tmdb.org/t/p/w500";
-
     static async searchPerson(query) {
         if (!query) return null;
         try {
@@ -99,3 +94,8 @@ class TmdbApi {
         return clean.trim();
     }
 }
+
+TmdbApi.API_KEY = "39a368e46831b064e387198130b9f541";
+TmdbApi.BASE_URL = "https://api.themoviedb.org/3";
+TmdbApi.IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w780";
+TmdbApi.POSTER_BASE_URL = "https://image.tmdb.org/t/p/w300";

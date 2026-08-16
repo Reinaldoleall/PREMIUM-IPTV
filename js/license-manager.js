@@ -1,7 +1,4 @@
 class LicenseManager {
-    static db = firebase.firestore();
-    static OFFLINE_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-
     // Generate or retrieve a persistent UUID for this browser to act as Android ID
     static async getDeviceId() {
         let deviceId = await localforage.getItem('IPTV_DEVICE_ID');
@@ -148,3 +145,6 @@ class LicenseManager {
         }
     }
 }
+
+LicenseManager.db = typeof firebase !== 'undefined' ? firebase.firestore() : null;
+LicenseManager.OFFLINE_CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
